@@ -59,21 +59,24 @@ update() {
 
 fetch() {
   (( $# )) || set -- *
-  cower -f -d "$@"
+  cower -f -d "$@" || true
   for pkg; do
     if [ -d "$pkg/.git" ]; then
       update "$pkg"
       continue
     fi
 
-    # XXX be more clever with git: use -Sp %r to figure out the repo,
-    # don't try any.
     [ -d "$pkg" ] ||
-    git clone --single-branch -b packages/$pkg \
-              git://projects.archlinux.org/svntogit/packages.git $pkg ||
-    git clone --single-branch -b packages/$pkg \
-              git://projects.archlinux.org/svntogit/community.git $pkg ||
-    echo "cannot fetch package $pkg" >/dev/stderr
+      case $(pacman -Spdd --print-format %r $pkg 2>/dev/null || true) in
+        core|extra|testing|multilib|multilist-testing)
+          git clone --single-branch -b packages/$pkg \
+              git://projects.archlinux.org/svntogit/packages.git $pkg;;
+        community|community-testing)
+          git clone --single-branch -b packages/$pkg \
+              git://projects.archlinux.org/svntogit/community.git $pkg;;
+        *)
+          echo "cannot fetch package $pkg" >/dev/stderr;;
+      esac
   done
 }
 
