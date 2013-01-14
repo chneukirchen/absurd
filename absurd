@@ -19,14 +19,25 @@
 # XXX should -R remove from $ABSURDTOP? => better use a repository with fixed
 #      name instead of "set -- *"
 
+
 # XXX move to something more persistent later
 : ${ABSURDTOP:=/tmp/absurd-$UID}
-: ${ABSURDREPO:=/tmp/absurd-$UID/.repo}
+: ${ABSURDREPO:=/tmp/absurdrepo-$UID/absurd}
+: ${ABSURDREPONAME:=$(basename $ABSURDREPO)}
 
 : ${ABSURDMAKEPKG:=-s}
 [[ $UID = 0 ]] && ABSURDMAKEPKG+=" --asroot"
 
 ABSURD=$(realpath $0)
+
+pacman -Sl "$ABSURDREPONAME" >/dev/null 2>&1 || cat <<EOF >/dev/stderr
+Warning: repository $ABSURDREPONAME unknown to pacman!
+Add these lines to /etc/pacman.conf before any other repo:
+
+  [$ABSURDREPONAME]
+  Server = file://$ABSURDREPO
+
+EOF
 
 set -e
 mkdir -p "$ABSURDTOP"
@@ -100,9 +111,9 @@ build() {
       echo "==> building $pkg" >/dev/stderr
 
       touch PKGBUILD
-      PKGDEST=$ABSURDREPO makepkg ${ABSURDMAKEPKG} || continue
+      PKGDEST=$ABSURDREPO makepkg $ABSURDMAKEPKG || continue
       find $ABSURDREPO -newer PKGBUILD -name "*.pkg.*" \
-           -exec repo-add $ABSURDREPO/absurd.db.tar.gz {} +
+           -exec repo-add $ABSURDREPO/$ABSURDREPONAME.db.tar.gz {} +
     )
   done
 }
