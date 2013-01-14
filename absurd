@@ -12,8 +12,6 @@
 # XXX ability to protect AUR checkouts from being overwritten by cower
 # XXX --devel
 
-# XXX configurable: ${ABSURD_PRIVILEDGE_HOOK:-su}
-
 # XXX batshit-insane: generate a makefile of dependencies dynamically
 # to allow -jN?
 
@@ -39,7 +37,7 @@ cd "$ABSURDTOP"
 asroot() {
   if [[ $UID = 0 ]]; then
     eval "$@"
-  elif type -p sudo >/dev/null; then
+  elif type -p sudo >/dev/null && [[ "$ABSURDSUDO" != no ]]; then
     sudo "$@"
   else
     su root -c "$*"
