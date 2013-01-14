@@ -15,11 +15,6 @@
 # XXX batshit-insane: generate a makefile of dependencies dynamically
 # to allow -jN?
 
-# XXX Passthru -R*, -Q* etc to pacman
-# XXX should -R remove from $ABSURDTOP? => better use a repository with fixed
-#      name instead of "set -- *"
-
-
 # XXX move to something more persistent later
 : ${ABSURDTOP:=/tmp/absurd-$UID}
 : ${ABSURDREPO:=/tmp/absurdrepo-$UID/absurd}
@@ -218,6 +213,12 @@ EOF
     pacman -Si "$@" 2>/dev/null || true
     cower -i "$@" 2>/dev/null || true
     ;;
+
+  -Q*)
+    pacman "$@";;
+
+  -D*|-R*|-U*)
+    asroot pacman "$@";;
 
   -Ss)
     shift ;;&
