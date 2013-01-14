@@ -99,10 +99,10 @@ build() {
 
       echo "==> building $pkg" >/dev/stderr
 
+      touch PKGBUILD
       PKGDEST=$ABSURDREPO makepkg ${ABSURDMAKEPKG} || continue
-      # XXX figure out what we built and only add that, perhaps using
-      # a timestamp file (touch PKGBUILD...)?
-      repo-add $ABSURDREPO/absurd.db.tar.gz $ABSURDREPO/*.pkg.* >/dev/null 2>&1 || true
+      find $ABSURDREPO -newer PKGBUILD -name "*.pkg.*" \
+           -exec repo-add $ABSURDREPO/absurd.db.tar.gz {} +
     )
   done
 }
