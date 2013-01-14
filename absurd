@@ -55,9 +55,13 @@ asroot() {
   fi
 }
 
+installed() {
+  pacman -Sl absurd | awk 'NF==4 {print $2}'
+}
+
 update() {
   aurpkgs=()
-  (( $# )) || set -- *
+  (( $# )) || set -- $(installed)
   for pkg; do
     if [ -d "$pkg/.git" ]; then
       ( cd "$pkg"; git pull --no-edit )
@@ -69,7 +73,7 @@ update() {
 }
 
 fetch() {
-  (( $# )) || set -- *
+  (( $# )) || set -- $(installed)
   cower -f -d "$@" || true
   for pkg; do
     if [ -d "$pkg/.git" ]; then
@@ -92,7 +96,7 @@ fetch() {
 }
 
 build() {
-  (( $# )) || set -- *
+  (( $# )) || set -- $(installed)
   for pkg; do
     ( 
       cd "$pkg" || continue
