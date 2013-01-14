@@ -1,0 +1,212 @@
+#!/bin/bash
+# absurd - build stuff from AUR, ABS or existing directories
+#
+# Written by Christian Neukirchen <purl.org/net/chneukirchen>, 13jan2013
+# 
+# To the extent possible under law, the creator of this work has waived
+# all copyright and related or neighboring rights to this work.
+# http://creativecommons.org/publicdomain/zero/1.0/
+
+# XXX option to install deps from ABS too?
+# XXX store git snapshots of $ABSURDTOP before updating?
+# XXX ability to protect AUR checkouts from being overwritten by cower
+# XXX --devel
+
+# XXX configurable: ${ABSURD_PRIVILEDGE_HOOK:-su}
+
+# XXX batshit-insane: generate a makefile of dependencies dynamically
+# to allow -jN?
+
+# XXX Passthru -R*, -Q* etc to pacman
+# XXX should -R remove from $ABSURDTOP? => better use a repository with fixed
+#      name instead of "set -- *"
+
+# XXX move to something more persistent later
+: ${ABSURDTOP:=/tmp/absurd-$UID}
+: ${ABSURDREPO:=/tmp/absurd-$UID/.repo}
+
+: ${ABSURDMAKEPKG:=-s}
+[[ $UID = 0 ]] && ABSURDMAKEPKG+=" --asroot"
+
+ABSURD=$(realpath $0)
+
+set -e
+mkdir -p "$ABSURDTOP"
+mkdir -p "$ABSURDREPO"
+
+cd "$ABSURDTOP"
+
+asroot() {
+  if [[ $UID = 0 ]]; then
+    eval "$@"
+  elif type -p sudo >/dev/null; then
+    sudo "$@"
+  else
+    su root -c "$*"
+  fi
+}
+
+update() {
+  aurpkgs=()
+  (( $# )) || set -- *
+  for pkg; do
+    if [ -d "$pkg/.git" ]; then
+      ( cd "$pkg"; git pull --no-edit )
+    else
+      aurpkgs+=($pkg)
+    fi
+  done
+  (( ${#aurpkgs[@]} )) && cower -f -d ${aurpkgs[@]} || true
+}
+
+fetch() {
+  (( $# )) || set -- *
+  cower -f -d "$@"
+  for pkg; do
+    if [ -d "$pkg/.git" ]; then
+      update "$pkg"
+      continue
+    fi
+
+    # XXX be more clever with git: use -Sp %r to figure out the repo,
+    # don't try any.
+    [ -d "$pkg" ] ||
+    git clone --single-branch -b packages/$pkg \
+              git://projects.archlinux.org/svntogit/packages.git $pkg ||
+    git clone --single-branch -b packages/$pkg \
+              git://projects.archlinux.org/svntogit/community.git $pkg ||
+    echo "cannot fetch package $pkg" >/dev/stderr
+  done
+}
+
+build() {
+  (( $# )) || set -- *
+  for pkg; do
+    ( 
+      cd "$pkg" || continue
+
+      pkgname=
+      [ -e trunk/PKGBUILD ] && cd trunk && { . ./PKGBUILD || continue; }
+      [ -e       PKGBUILD ]             && { . ./PKGBUILD || continue; }
+
+      if [ -z "$pkgname" ]; then
+        echo "cannot find $pkg PKGBUILD" >/dev/stderr
+        continue
+      fi
+
+      $ABSURD -Sw $(checker ${depends[@]} ${makedepends[@]}) || continue
+
+      echo "==> building $pkg" >/dev/stderr
+
+      PKGDEST=$ABSURDREPO makepkg ${ABSURDMAKEPKG} || continue
+      # XXX figure out what we built and only add that, perhaps using
+      # a timestamp file (touch PKGBUILD...)?
+      repo-add $ABSURDREPO/absurd.db.tar.gz $ABSURDREPO/*.pkg.* >/dev/null 2>&1 || true
+    )
+  done
+}
+
+# don't fetch default repos implicitly
+checker() {
+  comm -23 <(stripver "$@" |sort) \
+           <( {
+                pacman -Slq testing
+                pacman -Slq core
+                pacman -Slq extra
+                pacman -Slq community-testing
+                pacman -Slq community
+                pacman -Slq multilib-testing
+                pacman -Slq multilib
+             } 2>/dev/null |sort)
+}
+
+stripver(){
+  printf '%s\n' "$@" | sed 's/[<>=].*//'
+}
+
+ABSURDIGNORE=()
+while (( $# )); do
+  case $1 in
+    --skipinteg|-A|--ignorearch|-f) ABSURDMAKEPKG+=" $1"; shift;;
+    --ignore) shift; ABSURDIGNORE+=(--ignore "$1"); shift;;
+    *) break;;
+  esac
+done
+
+case $1 in
+  --help|-h)
+    cat >/dev/stderr <<EOF
+usage:  absurd  -S   PKGS...          install from AUR and repos
+        absurd  -Sa  PKGS...          install from AUR and ABS
+        absurd  -Sw  PKGS...          build packages from AUR and ABS
+        absurd  -Su  PKGS...          rebuild all from AUR and ABS
+        absurd  -Sy  PKGS...          update from AUR and ABS
+        absurd  -Syu PKGS...          update, rebuild and install all packages
+        absurd  -Si  PKGS...          display info from AUR and repos
+        absurd [-Ss] KEYWORD...       search in AUR and repos
+
+additional options (before -S... only):
+        -f                            force rebuilds
+        -A, --ignorearch              ignore architecture checks
+        --skipinteg                   no verification checks on source files
+        --ignore PKGS                 don't operate on comma-seperated PKGS
+EOF
+    ;;
+
+  -S)
+    shift
+    fromaur=($(checker "$@"))
+    (( ${#fromaur[@]} )) && fetch "${fromaur[@]}"
+    (( ${#fromaur[@]} )) && build "${fromaur[@]}"
+    asroot pacman "${ABSURDIGNORE[@]}" -S "$@"
+    ;;
+
+  -Sa)
+    # fork from ABS
+    shift
+    fetch "$@"
+    build "$@"
+    asroot pacman "${ABSURDIGNORE[@]}" -S "$@"
+    ;;
+
+  -Sw)
+    shift
+    (( $# )) || exit 0
+    fetch "$@"
+    build "$@"
+    ;;
+
+  -Syu)
+    shift
+    fetch "$@"
+    update
+    build
+    asroot pacman "${ABSURDIGNORE[@]}" -Syu "$@"
+    ;;
+
+  -Sy)
+    shift
+    update "$@"
+    asroot pacman "${ABSURDIGNORE[@]}" -Sy
+    ;;
+
+  -Su)
+    shift
+    fetch "$@"
+    build
+    asroot pacman "${ABSURDIGNORE[@]}" -Su "$@"
+    ;;
+
+  -Si)
+    shift
+    pacman -Si "$@" 2>/dev/null || true
+    cower -i "$@" 2>/dev/null || true
+    ;;
+
+  -Ss)
+    shift ;;&
+  *)
+    pacman -Ss "$@" || true
+    cower -s "$@" || true
+    ;;
+esac
