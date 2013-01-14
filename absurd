@@ -146,7 +146,7 @@ while (( $# )); do
 done
 
 case $1 in
-  --help|-h)
+  --help|-h|"")
     cat >/dev/stderr <<EOF
 usage:  absurd  -S   PKGS...          install from AUR and repos
         absurd  -Sa  PKGS...          install from AUR and ABS
