@@ -105,20 +105,19 @@ getdeps() {
   )
 }
 
-build() {
+depbuild() {
   echo "==> building deps of $pkg" >/dev/stderr
   if (( ABSURDJOBS == 1 )); then
     for dep in $(checker $(getdeps $pkg)); do
       build $dep
     done
-    reallybuild $pkg || true
+    pkgbuild $pkg || true
   else
     queue=(${queue[@]} $(checker $(getdeps $pkg)) !$pkg)
-    echo ${queue[@]}
   fi
 }
 
-reallybuild() {
+pkgbuild() {
   pkg=$1
   echo "==> building $pkg" >/dev/stderr
   (
@@ -147,7 +146,33 @@ while (( $# )); do
   esac
 done
 
-main() {
+build() {
+  for pkg; do depbuild $pkg; done
+
+  if (( ABSURDJOBS > 1 )); then
+    set -m
+    sigchld() {
+      joblist=($(jobs -pr))
+      (( ${#joblist[@]} > ABSURDJOBS )) && return
+
+      cmd=${queue[0]}; queue=(${queue[@]:1})
+      [[ -z "$cmd" ]] && return
+
+      case $cmd in
+        !*) pkgbuild ${cmd#!} & ;;
+        *) depbuild $cmd ;;
+      esac
+    }
+    trap sigchld CHLD
+
+    for i in $(seq 0 $ABSURDJOBS); do
+      sigchld
+    done
+
+    wait
+  fi
+}
+
 case $1 in
   --help|-h|"")
     cat >/dev/stderr <<EOF
@@ -161,6 +186,7 @@ usage:  absurd  -S   PKGS...          install from AUR and repos
         absurd [-Ss] KEYWORD...       search in AUR and repos
 
 additional options (before -S... only):
+        -jN                           run N processes in parallel
         -f                            force rebuilds
         -A, --ignorearch              ignore architecture checks
         --skipinteg                   no verification checks on source files
@@ -172,7 +198,7 @@ EOF
     shift
     fromaur=($(checker "$@"))
     (( ${#fromaur[@]} )) && fetch "${fromaur[@]}"
-    for pkg in ${fromaur[@]}; do build $pkg; done
+    build ${fromaur[@]}
     asroot pacman "${ABSURDIGNORE[@]}" -S "$@"
     ;;
 
@@ -181,7 +207,7 @@ EOF
     shift
     (( $# )) || set -- $(installed)
     fetch "$@"
-    for pkg; do build $pkg; done
+    build "$@"
     asroot pacman "${ABSURDIGNORE[@]}" -S "$@"
     ;;
 
@@ -189,14 +215,14 @@ EOF
     shift
     (( $# )) || exit 0
     fetch "$@"
-    for pkg; do build $pkg; done
+    build "$@"
     ;;
 
   -Syu)
     shift
     fetch "$@"
     update
-    for pkg in $(installed) "$@"; do build $pkg; done
+    build $(installed) "$@"
     asroot pacman "${ABSURDIGNORE[@]}" -Syu "$@"
     ;;
 
@@ -209,7 +235,7 @@ EOF
   -Su)
     shift
     fetch "$@"
-    for pkg in $(installed); do build $pkg; done
+    build $(installed)
     asroot pacman "${ABSURDIGNORE[@]}" -Su "$@"
     ;;
 
@@ -232,34 +258,3 @@ EOF
     cower -s "$@" || true
     ;;
 esac
-}
-
-if (( ABSURDJOBS == 1 )); then
-  main "$@"
-else
-  set -m
-
-  queue=()
-  main "$@"
-
-  sigchld() {
-    joblist=($(jobs -pr))
-    echo CHLD ${#joblist[@]}
-    (( ${#joblist[@]} > ABSURDJOBS )) && return
-    cmd=${queue[0]}; queue=(${queue[@]:1})
-    echo :: build queue ${queue[@]}
-
-    [[ -z "$cmd" ]] && return
-    case $cmd in
-      !*) reallybuild ${cmd#!} & ;;
-      *) build $cmd ;;
-    esac
-  }
-  trap sigchld CHLD
-
-  for i in $(seq 0 $ABSURDJOBS); do
-    sigchld
-  done
-
-  wait
-fi
