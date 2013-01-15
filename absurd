@@ -37,6 +37,7 @@ mkdir -p "$ABSURDTOP"
 mkdir -p "$ABSURDREPO"
 
 cd "$ABSURDTOP"
+> .checker
 
 asroot() {
   if [[ $UID = 0 ]]; then
@@ -132,8 +133,13 @@ pkgbuild() {
 
 # don't fetch default repos implicitly, also strip version numbers
 checker() {
+  [ -s $ABSURDTOP/.checker ] ||
+    pacman -Sl |
+    awk '$1 != ENVIRON["ABSURDREPONAME"] {print $2}' |
+    sort -u >$ABSURDTOP/.checker
+
   comm -23 <(printf '%s\n' "$@" | sed 's/[<>=].*//' |sort -u) \
-           <(pacman -Sl |awk '$1!=ENVIRON["ABSURDREPONAME"] {print $2}' |sort -u)
+           $ABSURDTOP/.checker
 }
 
 ABSURDIGNORE=()
