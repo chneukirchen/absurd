@@ -89,10 +89,13 @@ fetch() {
   done
 }
 
+# returns non-true if package can/need not be rebuilt
 getdeps() {
   pkg=$1
   (
-    cd "$ABSURDTOP/$pkg" || return
+    cd "$ABSURDTOP/$pkg" || return 1
+
+    . /etc/makepkg.conf
 
     [[ -e trunk/PKGBUILD ]] && cd trunk
     [[ -e PKGBUILD ]] && { . ./PKGBUILD || true; }
@@ -103,18 +106,23 @@ getdeps() {
     fi
 
     echo ${depends[@]} ${makedepends[@]}
+
+    fullver=${epoch:+$epoch:}$pkgver-$pkgrel
+    [[ ! ( -f $ABSURDREPO/${pkgname}-${fullver}-${CARCH}${PKGEXT} ||
+           -f $ABSURDREPO/${pkgname}-${fullver}-any${PKGEXT} ) ]]
   )
 }
 
 depbuild() {
-  echo "==> building deps of $pkg" >/dev/stderr
-  if (( ABSURDJOBS == 1 )); then
-    for dep in $(checker $(getdeps $pkg)); do
-      build $dep
-    done
-    pkgbuild $pkg || true
-  else
-    queue=(${queue[@]} $(checker $(getdeps $pkg)) !$pkg)
+  pkg=$1
+  if deps=$(getdeps $1); then
+    echo "==> building deps of $pkg" >/dev/stderr
+    if (( ABSURDJOBS == 1 )); then
+      build $(checker $deps)
+      pkgbuild $pkg || true
+    else
+      queue=(${queue[@]} $(checker $deps) !$pkg)
+    fi
   fi
 }
 
