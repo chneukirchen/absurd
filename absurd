@@ -12,18 +12,16 @@
 # XXX ability to protect AUR checkouts from being overwritten by cower
 # XXX --devel
 
-# XXX batshit-insane: generate a makefile of dependencies dynamically
-# to allow -jN?
-
 # XXX move to something more persistent later
 : ${ABSURDTOP:=/tmp/absurd-$UID}
 : ${ABSURDREPO:=/tmp/absurdrepo-$UID/absurd}
 : ${ABSURDREPONAME:=$(basename $ABSURDREPO)}
+: ${ABSURDJOBS:=1}
 
 : ${ABSURDMAKEPKG:=-s}
 [[ $UID = 0 ]] && ABSURDMAKEPKG+=" --asroot"
 
-ABSURD=$(realpath $0)
+export ABSURDREPONAME
 
 pacman -Sl "$ABSURDREPONAME" >/dev/null 2>&1 || cat <<EOF >/dev/stderr
 Warning: repository $ABSURDREPONAME unknown to pacman!
@@ -59,17 +57,17 @@ update() {
   (( $# )) || set -- $(installed)
   for pkg; do
     if [ -d "$pkg/.git" ]; then
-      ( cd "$pkg"; git pull --no-edit )
+      ( cd "$pkg"; echo -n ":: updating $pkg: "; git pull --no-edit )
     else
       aurpkgs+=($pkg)
     fi
   done
-  (( ${#aurpkgs[@]} )) && cower -f -d ${aurpkgs[@]} || true
+  (( ${#aurpkgs[@]} )) && cower --ignorerepo=$ABSURDREPONAME -f -d ${aurpkgs[@]} || true
 }
 
 fetch() {
   (( $# )) || set -- $(installed)
-  cower -f -d "$@" || true
+  cower --ignorerepo=$ABSURDREPONAME -f -d "$@" || true
   for pkg; do
     if [ -d "$pkg/.git" ]; then
       update "$pkg"
@@ -90,49 +88,53 @@ fetch() {
   done
 }
 
+getdeps() {
+  pkg=$1
+  (
+    cd "$ABSURDTOP/$pkg" || return
+
+    [ -e trunk/PKGBUILD ] && cd trunk
+    [ -e PKGBUILD ] && { . ./PKGBUILD || continue; }
+
+    if [ -z "$pkgname" ]; then
+      echo "cannot find $pkg PKGBUILD" >/dev/stderr
+      return
+    fi
+
+    echo ${depends[@]} ${makedepends[@]}
+  )
+}
+
 build() {
-  (( $# )) || set -- $(installed)
-  for pkg; do
-    ( 
-      cd "$pkg" || continue
-
-      pkgname=
-      [ -e trunk/PKGBUILD ] && cd trunk && { . ./PKGBUILD || continue; }
-      [ -e       PKGBUILD ]             && { . ./PKGBUILD || continue; }
-
-      if [ -z "$pkgname" ]; then
-        echo "cannot find $pkg PKGBUILD" >/dev/stderr
-        continue
-      fi
-
-      $ABSURD -Sw $(checker ${depends[@]} ${makedepends[@]}) || continue
-
-      echo "==> building $pkg" >/dev/stderr
-
-      touch PKGBUILD
-      PKGDEST=$ABSURDREPO makepkg $ABSURDMAKEPKG || continue
-      find $ABSURDREPO -newer PKGBUILD -name "*.pkg.*" \
-           -exec repo-add $ABSURDREPO/$ABSURDREPONAME.db.tar.gz {} +
-    )
-  done
+  echo "==> building deps of $pkg" >/dev/stderr
+  if (( ABSURDJOBS == 1 )); then
+    for dep in $(checker $(getdeps $pkg)); do
+      build $dep
+    done
+    reallybuild $pkg || true
+  else
+    queue=(${queue[@]} $(checker $(getdeps $pkg)) !$pkg)
+    echo ${queue[@]}
+  fi
 }
 
-# don't fetch default repos implicitly
+reallybuild() {
+  pkg=$1
+  echo "==> building $pkg" >/dev/stderr
+  (
+    cd $ABSURDTOP/$pkg
+    [ -e trunk/PKGBUILD ] && cd trunk
+    touch -c PKGBUILD
+    PKGDEST=$ABSURDREPO makepkg $ABSURDMAKEPKG &&
+    find $ABSURDREPO -newer PKGBUILD -name "*.pkg.*" \
+      -exec repo-add $ABSURDREPO/$ABSURDREPONAME.db.tar.gz {} +
+  )
+}
+
+# don't fetch default repos implicitly, also strip version numbers
 checker() {
-  comm -23 <(stripver "$@" |sort) \
-           <( {
-                pacman -Slq testing
-                pacman -Slq core
-                pacman -Slq extra
-                pacman -Slq community-testing
-                pacman -Slq community
-                pacman -Slq multilib-testing
-                pacman -Slq multilib
-             } 2>/dev/null |sort)
-}
-
-stripver(){
-  printf '%s\n' "$@" | sed 's/[<>=].*//'
+  comm -23 <(printf '%s\n' "$@" | sed 's/[<>=].*//' |sort -u) \
+           <(pacman -Sl |awk '$1!=ENVIRON["ABSURDREPONAME"] {print $2}' |sort -u)
 }
 
 ABSURDIGNORE=()
@@ -140,10 +142,12 @@ while (( $# )); do
   case $1 in
     --skipinteg|-A|--ignorearch|-f) ABSURDMAKEPKG+=" $1"; shift;;
     --ignore) shift; ABSURDIGNORE+=(--ignore "$1"); shift;;
+    -j*) ABSURDJOBS=${1#-j}; shift;;
     *) break;;
   esac
 done
 
+main() {
 case $1 in
   --help|-h|"")
     cat >/dev/stderr <<EOF
@@ -168,15 +172,16 @@ EOF
     shift
     fromaur=($(checker "$@"))
     (( ${#fromaur[@]} )) && fetch "${fromaur[@]}"
-    (( ${#fromaur[@]} )) && build "${fromaur[@]}"
+    for pkg in ${fromaur[@]}; do build $pkg; done
     asroot pacman "${ABSURDIGNORE[@]}" -S "$@"
     ;;
 
   -Sa)
     # fork from ABS
     shift
+    (( $# )) || set -- $(installed)
     fetch "$@"
-    build "$@"
+    for pkg; do build $pkg; done
     asroot pacman "${ABSURDIGNORE[@]}" -S "$@"
     ;;
 
@@ -184,14 +189,14 @@ EOF
     shift
     (( $# )) || exit 0
     fetch "$@"
-    build "$@"
+    for pkg; do build $pkg; done
     ;;
 
   -Syu)
     shift
     fetch "$@"
     update
-    build
+    for pkg in $(installed) "$@"; do build $pkg; done
     asroot pacman "${ABSURDIGNORE[@]}" -Syu "$@"
     ;;
 
@@ -204,7 +209,7 @@ EOF
   -Su)
     shift
     fetch "$@"
-    build
+    for pkg in $(installed); do build $pkg; done
     asroot pacman "${ABSURDIGNORE[@]}" -Su "$@"
     ;;
 
@@ -227,3 +232,34 @@ EOF
     cower -s "$@" || true
     ;;
 esac
+}
+
+if (( ABSURDJOBS == 1 )); then
+  main "$@"
+else
+  set -m
+
+  queue=()
+  main "$@"
+
+  sigchld() {
+    joblist=($(jobs -pr))
+    echo CHLD ${#joblist[@]}
+    (( ${#joblist[@]} > ABSURDJOBS )) && return
+    cmd=${queue[0]}; queue=(${queue[@]:1})
+    echo :: build queue ${queue[@]}
+
+    [[ -z "$cmd" ]] && return
+    case $cmd in
+      !*) reallybuild ${cmd#!} & ;;
+      *) build $cmd ;;
+    esac
+  }
+  trap sigchld CHLD
+
+  for i in $(seq 0 $ABSURDJOBS); do
+    sigchld
+  done
+
+  wait
+fi
