@@ -181,7 +181,7 @@ pkgbuild() {
 
 # don't fetch default repos implicitly, also strip version numbers
 checker() {
-  [ -s $ABSURDTOP/.checker ] ||
+  [[ -s $ABSURDTOP/.checker ]] ||
     pacman -Sl |
     awk '$1 != ENVIRON["ABSURDREPONAME"] {print $2}' |
     sort -u >$ABSURDTOP/.checker
@@ -285,7 +285,7 @@ EOF
 
   -Sy)
     shift
-    update "$@"
+    update
     asroot pacman "${ABSURDIGNORE[@]}" -Sy
     ;;
 
