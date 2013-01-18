@@ -11,6 +11,7 @@
 # XXX store git snapshots of $ABSURDTOP before updating?
 # XXX ability to protect AUR checkouts from being overwritten by cower
 # XXX --devel
+[[ -e ~/.absurd.conf ]] && . ~/.absurd.conf
 
 # XXX move to something more persistent later
 : ${ABSURDTOP:=/tmp/absurd-$UID}
