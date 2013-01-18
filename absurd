@@ -19,7 +19,7 @@
 : ${ABSURDREPONAME:=$(basename $ABSURDREPO)}
 : ${ABSURDJOBS:=1}
 
-: ${ABSURDMAKEPKG:=-s}
+: ${ABSURDMAKEPKG:=-s -c}
 [[ $UID = 0 ]] && ABSURDMAKEPKG+=" --asroot"
 
 export ABSURDREPONAME
