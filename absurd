@@ -9,8 +9,9 @@
 
 # XXX option to install deps from ABS too?
 # XXX store git snapshots of $ABSURDTOP before updating?
-# XXX ability to protect AUR checkouts from being overwritten by cower
 # XXX --devel
+# XXX --noconfirm to makepkg and pacman
+
 [[ -e ~/.absurd.conf ]] && . ~/.absurd.conf
 
 # XXX move to something more persistent later
@@ -50,44 +51,79 @@ asroot() {
   fi
 }
 
+aur_outdated() {
+  URL="https://aur.archlinux.org/rpc.php?type=multiinfo"
+  for pkg; do URL="$URL&arg[]=$pkg"; done
+  curl -Lkgs $URL | jshon -e results -a -e Name -u -p -e Version -u |
+    awk '{ORS=NR%2?" ":"\n";print}' |
+    sort | join - <(pacman -Q) |
+    while read pkg rver lver; do
+      (( $(vercmp $rver $lver) > 0 )) && echo $pkg
+    done
+}
+
+aur_search() {
+  curl -Ls "https://aur.archlinux.org/rpc.php?type=search&arg=$1" |
+    jshon -e results -a -e Name -u -p         -e Version -u -p   \
+                        -e NumVotes -u -p     -e OutOfDate -u -p \
+                        -e Description -u |
+    awk 'NR%5==0{ORS="\n"}
+         NR%5==1{ORS=" "}
+         NR%5==2{ORS=" ("}
+         NR%5==3{ORS=") "}
+         NR%5==4{$1=$1>0?"OOD":""; ORS="\n  "}
+         {print}'
+}
+
 installed() {
   pacman -Sl absurd | awk 'NF==4 {print $2}'
 }
 
-update() {
-  aurpkgs=()
-  (( $# )) || set -- $(installed)
-  for pkg; do
-    if [[ -d "$pkg/.git" ]]; then
-      ( cd "$pkg"; echo -n ":: updating $pkg: "; git pull --no-edit )
-    else
-      aurpkgs+=($pkg)
-    fi
+fetchaur() {
+  cd $ABSURDTOP
+  [[ -e $1/.keep ]] ||
+    curl -Lks https://aur.archlinux.org/packages/${1:0:2}/$1/$1.tar.gz |
+    tar xzvf -
+}
+
+fetchgit() {
+  pkg=$1
+  cd $ABSURDTOP
+  case $(pacman -Spdd --print-format %r $pkg 2>/dev/null || true) in
+    core|extra|testing|multilib|multilist-testing)
+      git clone --single-branch -b packages/$pkg \
+          git://projects.archlinux.org/svntogit/packages.git $pkg;;
+    community|community-testing)
+      git clone --single-branch -b packages/$pkg \
+          git://projects.archlinux.org/svntogit/community.git $pkg;;
+    *)
+      echo "cannot fetch package $pkg" >/dev/stderr;;
+  esac
+}
+
+updateaur() {
+  for pkg in $(aur_outdated $(pacman -Qmq) $(pacman -Slq absurd)); do
+    fetchaur $pkg
   done
-  (( ${#aurpkgs[@]} )) && cower --ignorerepo=$ABSURDREPONAME -f -d ${aurpkgs[@]} || true
+}
+
+updategit() {
+  for pkg; do
+    cd $ABSURDTOP/$pkg
+    git pull --no-edit
+  done
 }
 
 fetch() {
   (( $# )) || set -- $(installed)
-  cower --ignorerepo=$ABSURDREPONAME -f -d "$@" || true
   for pkg; do
-    if [[ -d "$pkg/.git" ]]; then
-      update "$pkg"
-      continue
-    fi
-
-    [[ -d "$pkg" ]] ||
-      case $(pacman -Spdd --print-format %r $pkg 2>/dev/null || true) in
-        core|extra|testing|multilib|multilist-testing)
-          git clone --single-branch -b packages/$pkg \
-              git://projects.archlinux.org/svntogit/packages.git $pkg;;
-        community|community-testing)
-          git clone --single-branch -b packages/$pkg \
-              git://projects.archlinux.org/svntogit/community.git $pkg;;
-        *)
-          echo "cannot fetch package $pkg" >/dev/stderr;;
-      esac
+    [[ -d $ABSURDTOP/$pkg/.git ]] && fetchgit $pkg || fetchaur $pkg || true
   done
+}
+
+update() {
+  updateaur
+  updategit
 }
 
 # returns non-true if package can/need not be rebuilt
@@ -118,12 +154,15 @@ depbuild() {
   pkg=$1
   if deps=$(getdeps $1); then
     echo "==> building deps of $pkg" >/dev/stderr
+    needed=$(pacman -T $(checker $deps))
     if (( ABSURDJOBS == 1 )); then
-      build $(checker $deps)
+      build ${needed[@]}
       pkgbuild $pkg || true
     else
-      queue=(${queue[@]} $(checker $deps) !$pkg)
+      queue=(${queue[@]} ${needed[@]} !$pkg)
     fi
+  else
+    true
   fi
 }
 
@@ -162,7 +201,7 @@ while (( $# )); do
 done
 
 build() {
-  for pkg; do depbuild $pkg; done
+  for pkg; do depbuild $pkg || true; done
 
   if (( ABSURDJOBS > 1 )); then
     set -m
@@ -256,12 +295,6 @@ EOF
     asroot pacman "${ABSURDIGNORE[@]}" -Su "$@"
     ;;
 
-  -Si)
-    shift
-    pacman -Si "$@" 2>/dev/null || true
-    cower -i "$@" 2>/dev/null || true
-    ;;
-
   -Q*)
     pacman "$@";;
 
@@ -272,6 +305,6 @@ EOF
     shift ;;&
   *)
     pacman -Ss "$@" || true
-    cower -s "$@" || true
+    aur_search "$@" || true
     ;;
 esac
