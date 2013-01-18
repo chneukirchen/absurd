@@ -68,7 +68,7 @@ aur_search() {
                         -e NumVotes -u -p     -e OutOfDate -u -p \
                         -e Description -u |
     awk 'NR%5==0{ORS="\n"}
-         NR%5==1{ORS=" "}
+         NR%5==1{ORS=" ";$1="aur/"$1}
          NR%5==2{ORS=" ("}
          NR%5==3{ORS=") "}
          NR%5==4{$1=$1>0?"OOD":""; ORS="\n  "}
