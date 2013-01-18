@@ -235,6 +235,7 @@ EOF
 
   -Syu)
     shift
+    asroot pacman "${ABSURDIGNORE[@]}" -Syu "$@"
     fetch "$@"
     update
     build $(installed) "$@"
@@ -249,6 +250,7 @@ EOF
 
   -Su)
     shift
+    asroot pacman "${ABSURDIGNORE[@]}" -Su "$@"
     fetch "$@"
     build $(installed)
     asroot pacman "${ABSURDIGNORE[@]}" -Su "$@"
