@@ -253,6 +253,7 @@ EOF
     fromaur=($(checker "$@"))
     (( ${#fromaur[@]} )) && fetch "${fromaur[@]}"
     build ${fromaur[@]}
+    asroot pacman -Sy
     asroot pacman "${ABSURDIGNORE[@]}" -S "$@"
     ;;
 
@@ -262,6 +263,7 @@ EOF
     (( $# )) || set -- $(installed)
     fetch "$@"
     build "$@"
+    asroot pacman -Sy
     asroot pacman "${ABSURDIGNORE[@]}" -S "$@"
     ;;
 
