@@ -165,7 +165,11 @@ mkupdate() {
 }
 
 update() {
-  mkupdate GIT $(aur_outdated $(pacman -Qmq) $(pacman -Slq $ABSURDREPONAME))
+  if $FORCE; then
+    mkupdate GIT $(pacman -Qmq) $(pacman -Slq $ABSURDREPONAME)
+  else
+    mkupdate GIT $(aur_outdated $(pacman -Qmq) $(pacman -Slq $ABSURDREPONAME))
+  fi
 }
 
 build() {
@@ -175,9 +179,11 @@ build() {
 }
 
 ABSURDIGNORE=()
+FORCE=false
 while (( $# )); do
   case $1 in
-    --skipinteg|-A|--ignorearch|-f) ABSURDMAKEPKG+=" $1"; shift;;
+    -f) ABSURDMAKEPKG+=" $1"; FORCE=true; shift;;
+    --skipinteg|-A|--ignorearch) ABSURDMAKEPKG+=" $1"; shift;;
     --ignore) shift; ABSURDIGNORE+=(--ignore "$1"); shift;;
     -j*) ABSURDJOBS=${1#-j}; shift;;
     *) break;;
