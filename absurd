@@ -255,6 +255,7 @@ EOF
 
   -S)
     shift
+    (( $# )) || exit 1
     fromaur=($(checker "$@"))
     (( ${#fromaur[@]} )) && fetch "${fromaur[@]}"
     build ${fromaur[@]}
@@ -264,8 +265,8 @@ EOF
 
   -Sa)
     # fork from ABS
+    (( $# )) || exit 1
     shift
-    (( $# )) || set -- $(installed)
     fetch "$@"
     build "$@"
     asroot pacman -Sy
