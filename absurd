@@ -23,7 +23,7 @@
 : ${ABSURDMAKEPKG:=-s -c}
 [[ $UID = 0 ]] && ABSURDMAKEPKG+=" --asroot"
 
-export ABSURDREPONAME
+export ABSURDREPONAME ABSURDTOP ABSURDREPO ABSURDJOBS ABSURDMAKEPKG
 
 pacman -Sl "$ABSURDREPONAME" >/dev/null 2>&1 || cat <<EOF >/dev/stderr
 Warning: repository $ABSURDREPONAME unknown to pacman!
@@ -39,7 +39,6 @@ mkdir -p "$ABSURDTOP"
 mkdir -p "$ABSURDREPO"
 
 cd "$ABSURDTOP"
-> .checker
 
 asroot() {
   if [[ $UID = 0 ]]; then
@@ -80,9 +79,15 @@ installed() {
 
 fetchaur() {
   cd $ABSURDTOP
-  [[ -e $1/.keep ]] ||
-    curl -Lks https://aur.archlinux.org/packages/${1:0:2}/$1/$1.tar.gz |
-    tar xzvf - 2>/dev/null
+  pkg=$1
+  curl -Lks https://aur.archlinux.org/packages/${pkg:0:2}/$pkg/$pkg.tar.gz |
+    tar xzvf - || return 1
+  mkdeps $ABSURDTOP/$pkg/PKGBUILD >$ABSURDTOP/$pkg/deps.mk
+  cat <<EOF >$ABSURDTOP/$pkg/update.mk
+AUR: $pkg
+$pkg:
+	absurd --fetchaur $pkg
+EOF
 }
 
 fetchgit() {
@@ -96,103 +101,77 @@ fetchgit() {
       git clone --single-branch -b packages/$pkg \
           git://projects.archlinux.org/svntogit/community.git $pkg;;
     *)
-      echo "cannot fetch package $pkg" >/dev/stderr;;
+      return 1;;
   esac
-}
-
-updateaur() {
-  for pkg in $(aur_outdated $(pacman -Qmq) $(pacman -Slq absurd)); do
-    fetchaur $pkg
-  done
-}
-
-updategit() {
-  cd $ABSURDTOP
-  for repo in ${@:-*}; do
-    cd $repo/.git/.. 2>/dev/null || continue
-    [[ -e .keep ]] && continue
-    echo -n ":: updating $(basename $PWD): "
-    git pull --no-edit
-  done
+  cat <<EOF >$pkg/update.mk
+GIT: $pkg
+$pkg:
+	cd $ABSURDTOP/$pkg && git pull --no-edit
+	absurd --mkdeps $ABSURDTOP/$pkg/trunk/PKGBUILD >$ABSURDTOP/$pkg/deps.mk
+EOF
+  mkdeps $pkg/trunk/PKGBUILD >$pkg/deps.mk
 }
 
 fetch() {
-  (( $# )) || set -- $(installed)
   for pkg; do
-    [[ -d $ABSURDTOP/$pkg/.git ]] && updategit $pkg ||
+    [[ -e $ABSURDTOP/$pkg/update.mk ]] &&
+      make -f $ABSURDTOP/$pkg/update.mk $pkg ||
       fetchaur $pkg ||
       fetchgit $pkg ||
-      true
+      echo "cannot fetch package $pkg" >/dev/stderr
   done
 }
 
-update() {
-  updateaur
-  updategit
-}
+mkdeps() {
+  for pkgbuild in "$@"; do
+    cd $(dirname $pkgbuild)
 
-# returns non-true if package can/need not be rebuilt
-getdeps() {
-  pkg=$1
-  (
-    cd "$ABSURDTOP/$pkg" || return 1
+    (
+      . /etc/makepkg.conf
+      . ./PKGBUILD || true
 
-    . /etc/makepkg.conf
+      fullver=${epoch:+$epoch:}$pkgver-$pkgrel
+      if [[ "$arch" = any ]]; then
+        tgt="$ABSURDREPO/${pkgname}-${fullver}-any${PKGEXT}"
+      else
+        tgt="$ABSURDREPO/${pkgname}-${fullver}-${CARCH}${PKGEXT}"
+      fi
 
-    [[ -e trunk/PKGBUILD ]] && cd trunk
-    [[ -e PKGBUILD ]] && { . ./PKGBUILD || true; }
-
-    if [[ -z "$pkgname" ]]; then
-      echo "cannot find $pkg PKGBUILD" >/dev/stderr
-      return
-    fi
-
-    echo ${depends[@]} ${makedepends[@]}
-
-    fullver=${epoch:+$epoch:}$pkgver-$pkgrel
-    [[ ! ( -f $ABSURDREPO/${pkgname}-${fullver}-${CARCH}${PKGEXT} ||
-           -f $ABSURDREPO/${pkgname}-${fullver}-any${PKGEXT} ) ]]
-  )
-}
-
-depbuild() {
-  pkg=$1
-  if deps=$(getdeps $1); then
-    echo "==> building deps of $pkg" >/dev/stderr
-    needed=$(pacman -T $(checker $deps))
-    if (( ABSURDJOBS == 1 )); then
-      build ${needed[@]}
-      pkgbuild $pkg || true
-    else
-      queue=(${queue[@]} ${needed[@]} !$pkg)
-    fi
-  else
-    true
-  fi
-}
-
-pkgbuild() {
-  pkg=$1
-  echo "==> building $pkg" >/dev/stderr
-  (
-    cd $ABSURDTOP/$pkg
-    [[ -e trunk/PKGBUILD ]] && cd trunk
-    touch -c PKGBUILD
-    PKGDEST=$ABSURDREPO makepkg $ABSURDMAKEPKG &&
-    find $ABSURDREPO -newer PKGBUILD -name "*.pkg.*" \
-      -exec repo-add $ABSURDREPO/$ABSURDREPONAME.db.tar.gz {} +
-  )
+      for d in ${depends[@]} ${makedepends[@]}; do
+        echo $d:
+      done
+      echo ${pkgname%/}: $(checker ${depends[@]} ${makedepends[@]})
+      dir=$ABSURDTOP/$pkgname
+      [[ -e $dir/trunk/PKGBUILD ]] && dir=$dir/trunk
+      echo "	touch -c $dir/PKGBUILD"
+      echo "	cd $dir && [ -e $tgt ] || makepkg \$\$ABSURDMAKEPKG"
+      echo "	find \$\$ABSURDREPO -newer $dir/PKGBUILD -name '*.pkg.*' -exec repo-add \$\$ABSURDREPO/\$\$ABSURDREPONAME.db.tar.gz {} +"
+    )
+  done
 }
 
 # don't fetch default repos implicitly, also strip version numbers
 checker() {
-  [[ -s $ABSURDTOP/.checker ]] ||
-    pacman -Sl |
-    awk '$1 != ENVIRON["ABSURDREPONAME"] {print $2}' |
-    sort -u >$ABSURDTOP/.checker
-
   comm -23 <(printf '%s\n' "$@" | sed 's/[<>=].*//' |sort -u) \
-           $ABSURDTOP/.checker
+           <(pacman -Sl |
+             awk '$1 != ENVIRON["ABSURDREPONAME"] {print $2}' |
+             sort -u)
+}
+
+mkupdate() {
+  cd $ABSURDTOP
+  echo -e 'all:\nGIT:\ninclude */update.mk' >Makefile.update
+  make -B -f Makefile.update -k -j$ABSURDJOBS "$@"
+}
+
+update() {
+  mkupdate GIT $(aur_outdated $(pacman -Qmq) $(pacman -Slq $ABSURDREPONAME))
+}
+
+build() {
+  cd $ABSURDTOP
+  echo -e 'all:\ninclude */deps.mk' >Makefile.build
+  make -B -f Makefile.build -k -j$ABSURDJOBS "$@"
 }
 
 ABSURDIGNORE=()
@@ -204,33 +183,6 @@ while (( $# )); do
     *) break;;
   esac
 done
-
-build() {
-  for pkg; do depbuild $pkg || true; done
-
-  if (( ABSURDJOBS > 1 )); then
-    set -m
-    sigchld() {
-      joblist=($(jobs -pr))
-      (( ${#joblist[@]} > ABSURDJOBS )) && return
-
-      cmd=${queue[0]}; queue=(${queue[@]:1})
-      [[ -z "$cmd" ]] && return
-
-      case $cmd in
-        !*) pkgbuild ${cmd#!} & ;;
-        *) depbuild $cmd ;;
-      esac
-    }
-    trap sigchld CHLD
-
-    for i in $(seq 0 $ABSURDJOBS); do
-      sigchld
-    done
-
-    wait
-  fi
-}
 
 case $1 in
   --help|-h|"")
@@ -245,7 +197,7 @@ usage:  absurd  -S   PKGS...          install from AUR and repos
         absurd [-Ss] KEYWORD...       search in AUR and repos
 
 additional options (before -S... only):
-        -jN                           run N processes in parallel
+        -jN                           run N fetches/builds in parallel
         -f                            force rebuilds
         -A, --ignorearch              ignore architecture checks
         --skipinteg                   no verification checks on source files
@@ -308,6 +260,9 @@ EOF
 
   -D*|-R*|-U*)
     asroot pacman "$@";;
+
+  --mkdeps) shift; mkdeps "$@";;
+  --fetchaur) shift; fetchaur "$@";;
 
   -Ss)
     shift ;;&
