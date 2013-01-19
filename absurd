@@ -111,6 +111,7 @@ updategit() {
   cd $ABSURDTOP
   for repo in ${@:-*}; do
     cd $repo/.git/.. 2>/dev/null || continue
+    [[ -e .keep ]] && continue
     echo -n ":: updating $(basename $PWD): "
     git pull --no-edit
   done
