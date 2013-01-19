@@ -140,8 +140,7 @@ mkdeps() {
       echo ${pkgname%/}: $(stripver ${depends[@]} ${makedepends[@]})
       dir=$ABSURDTOP/$pkgname
       [[ -e $dir/trunk/PKGBUILD ]] && dir=$dir/trunk
-      echo "	cd $dir && [ -e $tgt ] || PKGDEST=\$\$ABSURDREPO makepkg \$\$ABSURDMAKEPKG"
-      echo "	cd $dir && repo-add \$\$ABSURDREPO/\$\$ABSURDREPONAME.db.tar.gz *.pkg.*"
+      echo "	cd $dir && [ -e $tgt ] || { PKGDEST=\$\$ABSURDREPO makepkg \$\$ABSURDMAKEPKG && repo-add \$\$ABSURDREPO/\$\$ABSURDREPONAME.db.tar.gz *.pkg.*; }"
     )
   done
 }
