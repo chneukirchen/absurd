@@ -110,7 +110,7 @@ updateaur() {
 updategit() {
   cd $ABSURDTOP
   for repo in ${@:-*}; do
-    cd $repo/.git/.. || continue
+    cd $repo/.git/.. 2>/dev/null || continue
     echo -n ":: updating $(basename $PWD): "
     git pull --no-edit
   done
