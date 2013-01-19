@@ -137,19 +137,22 @@ mkdeps() {
       for d in ${depends[@]} ${makedepends[@]}; do
         echo $d:
       done
-      echo ${pkgname%/}: $(checker ${depends[@]} ${makedepends[@]})
+      echo ${pkgname%/}: $(stripver ${depends[@]} ${makedepends[@]})
       dir=$ABSURDTOP/$pkgname
       [[ -e $dir/trunk/PKGBUILD ]] && dir=$dir/trunk
-      echo "	touch -c $dir/PKGBUILD"
-      echo "	cd $dir && [ -e $tgt ] || makepkg \$\$ABSURDMAKEPKG"
-      echo "	find \$\$ABSURDREPO -newer $dir/PKGBUILD -name '*.pkg.*' -exec repo-add \$\$ABSURDREPO/\$\$ABSURDREPONAME.db.tar.gz {} +"
+      echo "	cd $dir && [ -e $tgt ] || PKGDEST=\$\$ABSURDREPO makepkg \$\$ABSURDMAKEPKG"
+      echo "	cd $dir && repo-add \$\$ABSURDREPO/\$\$ABSURDREPONAME.db.tar.gz *.pkg.*"
     )
   done
 }
 
-# don't fetch default repos implicitly, also strip version numbers
+stripver() {
+  printf '%s\n' "$@" | sed 's/[<>=].*//'
+}
+
+# don't fetch default repos implicitly
 checker() {
-  comm -23 <(printf '%s\n' "$@" | sed 's/[<>=].*//' |sort -u) \
+  comm -23 <(stripver "$@" | sort -u) \
            <(pacman -Sl |
              awk '$1 != ENVIRON["ABSURDREPONAME"] {print $2}' |
              sort -u)
