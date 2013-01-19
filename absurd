@@ -29,8 +29,8 @@ pacman -Sl "$ABSURDREPONAME" >/dev/null 2>&1 || cat <<EOF >/dev/stderr
 Warning: repository $ABSURDREPONAME unknown to pacman!
 Add these lines to /etc/pacman.conf before any other repo:
 
-  [$ABSURDREPONAME]
-  Server = file://$ABSURDREPO
+[$ABSURDREPONAME]
+Server = file://$ABSURDREPO
 
 EOF
 
@@ -78,12 +78,11 @@ installed() {
 }
 
 fetchaur() {
-  cd $ABSURDTOP
   pkg=$1
   curl -Lks https://aur.archlinux.org/packages/${pkg:0:2}/$pkg/$pkg.tar.gz |
     tar xzvf - || return 1
-  mkdeps $ABSURDTOP/$pkg/PKGBUILD >$ABSURDTOP/$pkg/deps.mk
-  cat <<EOF >$ABSURDTOP/$pkg/update.mk
+  mkdeps $ABSURDTOP/$pkg/PKGBUILD >$pkg/deps.mk
+  cat <<EOF >$pkg/update.mk
 AUR: $pkg
 $pkg:
 	absurd --fetchaur $pkg
@@ -92,7 +91,6 @@ EOF
 
 fetchgit() {
   pkg=$1
-  cd $ABSURDTOP
   case $(pacman -Spdd --print-format %r $pkg 2>/dev/null || true) in
     core|extra|testing|multilib|multilist-testing)
       git clone --single-branch -b packages/$pkg \
@@ -109,13 +107,12 @@ $pkg:
 	cd $ABSURDTOP/$pkg && git pull --no-edit
 	absurd --mkdeps $ABSURDTOP/$pkg/trunk/PKGBUILD >$ABSURDTOP/$pkg/deps.mk
 EOF
-  mkdeps $pkg/trunk/PKGBUILD >$pkg/deps.mk
+  mkdeps $ABSURDTOP/$pkg/trunk/PKGBUILD >$pkg/deps.mk
 }
 
 fetch() {
   for pkg; do
-    [[ -e $ABSURDTOP/$pkg/update.mk ]] &&
-      make -f $ABSURDTOP/$pkg/update.mk $pkg ||
+    [[ -e $pkg/update.mk ]] && make -f $pkg/update.mk $pkg ||
       fetchaur $pkg ||
       fetchgit $pkg ||
       echo "cannot fetch package $pkg" >/dev/stderr
@@ -124,9 +121,9 @@ fetch() {
 
 mkdeps() {
   for pkgbuild in "$@"; do
-    cd $(dirname $pkgbuild)
-
     (
+      cd $(dirname $pkgbuild)
+
       . /etc/makepkg.conf
       . ./PKGBUILD || true
 
@@ -159,7 +156,6 @@ checker() {
 }
 
 mkupdate() {
-  cd $ABSURDTOP
   echo -e 'all:\nGIT:\ninclude */update.mk' >Makefile.update
   make -B -f Makefile.update -k -j$ABSURDJOBS "$@"
 }
@@ -173,7 +169,6 @@ update() {
 }
 
 build() {
-  cd $ABSURDTOP
   echo -e 'all:\ninclude */deps.mk' >Makefile.build
   make -B -f Makefile.build -k -j$ABSURDJOBS "$@"
 }
@@ -199,7 +194,6 @@ usage:  absurd  -S   PKGS...          install from AUR and repos
         absurd  -Su  PKGS...          rebuild all from AUR and ABS
         absurd  -Sy  PKGS...          update from AUR and ABS
         absurd  -Syu PKGS...          update, rebuild and install all packages
-        absurd  -Si  PKGS...          display info from AUR and repos
         absurd [-Ss] KEYWORD...       search in AUR and repos
 
 additional options (before -S... only):
