@@ -83,7 +83,7 @@ fetchaur() {
   cd $ABSURDTOP
   [[ -e $1/.keep ]] ||
     curl -Lks https://aur.archlinux.org/packages/${1:0:2}/$1/$1.tar.gz |
-    tar xzvf -
+    tar xzvf - 2>/dev/null
 }
 
 fetchgit() {
