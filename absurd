@@ -108,8 +108,10 @@ updateaur() {
 }
 
 updategit() {
-  for pkg; do
-    cd $ABSURDTOP/$pkg
+  cd $ABSURDTOP
+  for repo in ${@:-*}; do
+    cd $repo/.git/.. || continue
+    echo -n ":: updating $(basename $PWD): "
     git pull --no-edit
   done
 }
@@ -117,7 +119,10 @@ updategit() {
 fetch() {
   (( $# )) || set -- $(installed)
   for pkg; do
-    [[ -d $ABSURDTOP/$pkg/.git ]] && fetchgit $pkg || fetchaur $pkg || true
+    [[ -d $ABSURDTOP/$pkg/.git ]] && updategit $pkg ||
+      fetchaur $pkg ||
+      fetchgit $pkg ||
+      true
   done
 }
 
