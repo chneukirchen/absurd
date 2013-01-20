@@ -22,8 +22,9 @@
 
 : ${ABSURDMAKEPKG:=-s -c}
 [[ $UID = 0 ]] && ABSURDMAKEPKG+=" --asroot"
+ABSURDFORCE=false
 
-export ABSURDREPONAME ABSURDTOP ABSURDREPO ABSURDJOBS ABSURDMAKEPKG
+export ABSURDREPONAME ABSURDTOP ABSURDREPO ABSURDJOBS ABSURDMAKEPKG ABSURDFORCE
 
 pacman -Sl "$ABSURDREPONAME" >/dev/null 2>&1 || cat <<EOF >/dev/stderr
 Warning: repository $ABSURDREPONAME unknown to pacman!
@@ -140,7 +141,7 @@ mkdeps() {
       echo ${pkgname%/}: $(stripver ${depends[@]} ${makedepends[@]})
       dir=$ABSURDTOP/$pkgname
       [[ -e $dir/trunk/PKGBUILD ]] && dir=$dir/trunk
-      echo "	cd $dir && [ -e $tgt ] || { PKGDEST=\$\$ABSURDREPO makepkg \$\$ABSURDMAKEPKG && repo-add \$\$ABSURDREPO/\$\$ABSURDREPONAME.db.tar.gz *.pkg.*; }"
+      echo "	cd $dir && { [ -e $tgt ] && ! \$\$ABSURDFORCE; } || { PKGDEST=\$\$ABSURDREPO MAKEFLAGS= MFLAGS= makepkg \$\$ABSURDMAKEPKG && repo-add \$\$ABSURDREPO/\$\$ABSURDREPONAME.db.tar.gz *.pkg.*; }"
     )
   done
 }
@@ -163,7 +164,7 @@ mkupdate() {
 }
 
 update() {
-  if $FORCE; then
+  if $ABSURDFORCE; then
     AUR_OUTDATED=$(installed)
     mkupdate GIT $(pacman -Qmq) $(pacman -Slq $ABSURDREPONAME)
   else
@@ -178,10 +179,9 @@ build() {
 }
 
 ABSURDIGNORE=()
-FORCE=false
 while (( $# )); do
   case $1 in
-    -f) ABSURDMAKEPKG+=" $1"; FORCE=true; shift;;
+    -f) ABSURDMAKEPKG+=" $1"; ABSURDFORCE=true; shift;;
     --skipinteg|-A|--ignorearch) ABSURDMAKEPKG+=" $1"; shift;;
     --ignore) shift; ABSURDIGNORE+=(--ignore "$1"); shift;;
     -j*) ABSURDJOBS=${1#-j}; shift;;
