@@ -164,9 +164,11 @@ mkupdate() {
 
 update() {
   if $FORCE; then
+    AUR_OUTDATED=$(installed)
     mkupdate GIT $(pacman -Qmq) $(pacman -Slq $ABSURDREPONAME)
   else
-    mkupdate GIT $(aur_outdated $(pacman -Qmq) $(pacman -Slq $ABSURDREPONAME))
+    AUR_OUTDATED=$(aur_outdated $(pacman -Qmq) $(pacman -Slq $ABSURDREPONAME))
+    mkupdate GIT $AUR_OUTDATED
   fi
 }
 
@@ -239,7 +241,7 @@ EOF
     asroot pacman "${ABSURDIGNORE[@]}" -Syu "$@"
     fetch "$@"
     update
-    build $(installed) "$@"
+    build $AUR_OUTDATED "$@"
     asroot pacman "${ABSURDIGNORE[@]}" -Syu "$@"
     ;;
 
