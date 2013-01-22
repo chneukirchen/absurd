@@ -58,7 +58,7 @@ aur_outdated() {
     awk '{ORS=NR%2?" ":"\n";print}' |
     sort | join - <(pacman -Q) |
     while read pkg rver lver; do
-      (( $(vercmp $rver $lver) > 0 )) && echo $pkg
+      (( $(vercmp $rver $lver) > 0 )) && echo $pkg || true
     done
 }
 
