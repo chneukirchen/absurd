@@ -51,15 +51,20 @@ asroot() {
   fi
 }
 
-aur_outdated() {
+aur_outdated_v() {
   URL="https://aur.archlinux.org/rpc.php?type=multiinfo"
   for pkg; do URL="$URL&arg[]=$pkg"; done
   curl -Lkgs $URL | jshon -e results -a -e Name -u -p -e Version -u |
     awk '{ORS=NR%2?" ":"\n";print}' |
     sort | join - <(pacman -Q) |
     while read pkg rver lver; do
-      (( $(vercmp $rver $lver) > 0 )) && echo $pkg || true
+      (( $(vercmp $rver $lver) > 0 )) &&
+        printf '%s\t%s\t%s\n' "$pkg" "$lver" "$rver" || true
     done
+}
+
+aur_outdated() {
+  aur_outdated_v "$@" | cut -f1
 }
 
 aur_search() {
@@ -200,6 +205,12 @@ usage:  absurd  -S   PKGS...          install from AUR and repos
         absurd  -Syu PKGS...          update, rebuild and install all packages
         absurd [-Ss] KEYWORD...       search in AUR and repos
 
+        absurd  -Au                   list outdated AUR packages
+        absurd  -Al                   list packages under absurd control
+        absurd  -Alq                  short list packages under absurd control
+
+        absurd  -Q/-D/-R/-U           same as for pacman
+
 additional options (before -S... only):
         -jN                           run N fetches/builds in parallel
         -f                            force rebuilds
@@ -207,6 +218,24 @@ additional options (before -S... only):
         --skipinteg                   no verification checks on source files
         --ignore PKGS                 don't operate on comma-seperated PKGS
 EOF
+    ;;
+
+  -Au)
+    aur_outdated_v $(pacman -Qmq) $(pacman -Slq $ABSURDREPONAME)
+    ;;
+
+  -Auq)
+    aur_outdated $(pacman -Qmq) $(pacman -Slq $ABSURDREPONAME)
+    ;;
+
+  -Al)
+    pacman -Qm
+    pacman -Sl $ABSURDREPONAME
+    ;;
+
+  -Alq)
+    pacman -Qmq
+    pacman -Slq $ABSURDREPONAME
     ;;
 
   -S)
@@ -265,6 +294,7 @@ EOF
   -D*|-R*|-U*)
     asroot pacman "$@";;
 
+  # internal use only
   --mkdeps) shift; mkdeps "$@";;
   --fetchaur) shift; fetchaur "$@";;
 
