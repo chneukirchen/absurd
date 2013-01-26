@@ -140,7 +140,7 @@ mkdeps() {
         tgt="$ABSURDREPO/${pkgname}-${fullver}-${CARCH}${PKGEXT}"
       fi
 
-      for d in ${depends[@]} ${makedepends[@]}; do
+      for d in $(stripver ${depends[@]} ${makedepends[@]}); do
         echo $d:
       done
       echo ${pkgname%/}: $(stripver ${depends[@]} ${makedepends[@]})
