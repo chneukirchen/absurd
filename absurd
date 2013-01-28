@@ -93,6 +93,8 @@ AUR: $pkg
 $pkg:
 	absurd --fetchaur $pkg
 EOF
+  # XXX hack:
+  for d in $(checker $(sed -n '/:$/s/:$//p' $pkg/deps.mk)); do fetchaur $d; done
 }
 
 fetchgit() {
@@ -140,10 +142,11 @@ mkdeps() {
         tgt="$ABSURDREPO/${pkgname}-${fullver}-${CARCH}${PKGEXT}"
       fi
 
-      for d in $(stripver ${depends[@]} ${makedepends[@]}); do
+      DEPS=($(stripver ${depends[@]} ${makedepends[@]}))
+      for d in ${DEPS[@]}; do
         echo $d:
       done
-      echo ${pkgname%/}: $(stripver ${depends[@]} ${makedepends[@]})
+      echo "${pkgname%/}: " ${DEPS[@]}
       dir=$ABSURDTOP/$pkgname
       [[ -e $dir/trunk/PKGBUILD ]] && dir=$dir/trunk
       echo "	cd $dir && { [ -e $tgt ] && ! \$\$ABSURDFORCE; } || { PKGDEST=\$\$ABSURDREPO MAKEFLAGS= MFLAGS= makepkg \$\$ABSURDMAKEPKG && repo-add \$\$ABSURDREPO/\$\$ABSURDREPONAME.db.tar.gz *.pkg.*; }"
