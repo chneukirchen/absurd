@@ -270,10 +270,11 @@ EOF
 
   -Syu)
     shift
+    fromaur=($(checker "$@"))
     asroot pacman "${ABSURDIGNORE[@]}" -Syu "$@"
-    fetch "$@"
+    (( ${#fromaur[@]} )) && fetch "${fromaur[@]}"
     update
-    build $AUR_OUTDATED "$@"
+    build $AUR_OUTDATED ${fromaur[@]}
     asroot pacman "${ABSURDIGNORE[@]}" -Syu "$@"
     ;;
 
