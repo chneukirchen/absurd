@@ -275,7 +275,7 @@ EOF
     (( ${#fromaur[@]} )) && fetch "${fromaur[@]}"
     update
     build $AUR_OUTDATED ${fromaur[@]}
-    asroot pacman "${ABSURDIGNORE[@]}" -Syu "$@"
+    asroot pacman "${ABSURDIGNORE[@]}" -Syu ${fromaur[@]}
     ;;
 
   -Sy)
