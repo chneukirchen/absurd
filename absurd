@@ -132,6 +132,9 @@ mkdeps() {
     (
       cd $(dirname $pkgbuild)
 
+      # update pkgver if possible
+      grep -q '^pkgver' PKGBUILD && makepkg -o >/dev/stderr
+
       . /etc/makepkg.conf
       . ./PKGBUILD || true
 
