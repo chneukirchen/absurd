@@ -92,6 +92,7 @@ fetchaur() {
 AUR: $pkg
 $pkg:
 	absurd --fetchaur $pkg
+.PHONY: $pkg
 EOF
   # XXX hack:
   for d in $(checker $(sed -n '/:$/s/:$//p' $pkg/deps.mk)); do fetchaur $d; done
@@ -114,6 +115,7 @@ GIT: $pkg
 $pkg:
 	cd $ABSURDTOP/$pkg && git pull --no-edit
 	absurd --mkdeps $ABSURDTOP/$pkg/trunk/PKGBUILD >$ABSURDTOP/$pkg/deps.mk
+.PHONY: $pkg
 EOF
   mkdeps $ABSURDTOP/$pkg/trunk/PKGBUILD >$pkg/deps.mk
 }
